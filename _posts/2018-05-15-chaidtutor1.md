@@ -1,6 +1,6 @@
 ---
 layout: post
-title: CHAID & R: When you need explanation – May 15, 2018
+title: CHAID and R -- When you need explanation – May 15, 2018
 tags: R ggplot2 dplyr CHAID caret purrr
 ---
 

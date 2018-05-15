@@ -8,6 +8,6 @@ Creating a post:
 6.	Knit the document to create an .md file
 7.	Cut and paste an example post header in, including the tags
 8.	While you're at it make sure you have files in the \tag directory for everything
-9.	Find and replace all the image links they should all be \image\
-10.	Move the image files themselves into \image\
+9.	Find and replace all the image links they should all be /images/
+10.	Move the image files themselves into /images/
 11.	Rename the .md file to yyyy-mm-dd-myname.md and save it in _posts

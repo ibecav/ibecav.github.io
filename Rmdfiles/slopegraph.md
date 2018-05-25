@@ -1,7 +1,8 @@
-Slopegraphs and R – A pleasant diversion – May 26, 2018
-================
-Chuck Powell
-5/26/2018
+---
+layout: post
+title: Slopegraphs and R -- A pleasant diversion -- May 26, 2018
+tags: R ggplot2 dplyr ggrepel slopegraph forcats kable reshape2
+---
 
 I try to at least scan the [R-bloggers](https://www.r-bloggers.com/)
 feed everyday. Not every article is of interest to me, but I often have

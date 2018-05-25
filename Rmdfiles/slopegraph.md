@@ -118,7 +118,7 @@ ggplot(data = data, aes(x = Date, y = Pct, group = Party)) +
   )
 ```
 
-![](slopegraph_files/figure-gfm/slopegraph1a-1.png)<!-- -->
+![](/images/slopegraph1a-1.png)<!-- -->
 
 The nice thing about `ggplot` is once you get used to the syntax it
 becomes very “readable”. We’ve identified our dataset, the x & y
@@ -164,7 +164,7 @@ ggplot(data = data, aes(x = Date, y = Pct, group = Party)) +
   )
 ```
 
-![](slopegraph_files/figure-gfm/slopegraph1b-1.png)<!-- -->
+![](/images/slopegraph1b-1.png)<!-- -->
 
 Nice progress\! Continuing to remove things that can be considered
 “clutter” we add some additional lines that all end in
@@ -202,7 +202,7 @@ ggplot(data = data, aes(x = Date, y = Pct, group = Party)) +
   )
 ```
 
-![](slopegraph_files/figure-gfm/slopegraph1c-1.png)<!-- -->
+![](/images/slopegraph1c-1.png)<!-- -->
 
 Very nice\! We’re almost there\! The “almost” is because now that we
 have removed both the legend and all scales and tick marks we no longer
@@ -268,7 +268,7 @@ ggplot(data = data, aes(x = Date, y = Pct, group = Party)) +
   )
 ```
 
-![](slopegraph_files/figure-gfm/slopegraph1d-1.png)<!-- -->
+![](/images/slopegraph1d-1.png)<!-- -->
 
 Eureka\! Not perfect yet but definitely looking good.
 
@@ -376,7 +376,7 @@ ggplot(data = moredata, aes(x = Date, y = Pct, group = Party)) +
   )
 ```
 
-![](slopegraph_files/figure-gfm/slopegraph2a-1.png)<!-- -->
+![](/images/slopegraph2a-1.png)<!-- -->
 
 Very nice\! We have confirmed that our solution works for more than two
 dates without any additional changes and we have found a solution to the
@@ -474,7 +474,7 @@ ggplot(data = moredata, aes(x = Date, y = Pct, group = Party)) +
   )
 ```
 
-![](slopegraph_files/figure-gfm/slopegraph3a-1.png)<!-- -->
+![](/images/slopegraph3a-1.png)<!-- -->
 
 ## Even more complex
 
@@ -1146,7 +1146,7 @@ ggplot(data = newcancer, aes(x = Year, y = Survival, group = Type)) +
   )
 ```
 
-![](slopegraph_files/figure-gfm/slopegraph4c-1.png)<!-- -->
+![](/images/slopegraph4c-1.png)<!-- -->
 
 ## Done for now
 

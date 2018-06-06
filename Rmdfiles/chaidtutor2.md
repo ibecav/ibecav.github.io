@@ -1,7 +1,8 @@
-CHAID and caret – a good combo – June 6, 2018
-================
-Chuck Powell
-6/6/2018
+---
+layout: post
+title: CHAID and caret – a good combo – June 6, 2018
+tags: R dplyr CHAID caret purrr
+---
 
 [In an earlier post](https://ibecav.github.io/chaidtutor1/) I focused on
 an in depth visit with CHAID (Chi-square automatic interaction

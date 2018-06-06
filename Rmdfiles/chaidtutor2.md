@@ -262,7 +262,7 @@ plot(
 )
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid22-1.png" width="900px" />
+<img src="/images/chaid22-1.png" width="900px" />
 
 ## Over-fitting
 
@@ -477,7 +477,7 @@ chaid.m1 #equivalent to print(chaid.m1)
 plot(chaid.m1)
 ```
 
-![](chaidtutor2_files/figure-gfm/chaid27-1.png)<!-- -->
+![](/images/chaid27-1.png)<!-- -->
 
 Wait. What? These are not the output we’re used to. `caret` has changed
 the output from its’ work (an improvement actually) but we’ll have to
@@ -573,7 +573,7 @@ chaid.m1$finalModel
 plot(chaid.m1$finalModel)
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid28-1.png" width="900px" />
+<img src="/images/chaid28-1.png" width="900px" />
 
 ``` r
 confusionMatrix(chaid.m1)
@@ -867,7 +867,7 @@ chaid.m2
 plot(chaid.m2)
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid29-1.png" width="900px" />
+<img src="/images/chaid29-1.png" width="900px" />
 
 ``` r
 chaid.m2$finalModel
@@ -900,7 +900,7 @@ chaid.m2$finalModel
 plot(chaid.m2$finalModel)
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid29-2.png" width="900px" />
+<img src="/images/chaid29-2.png" width="900px" />
 
 ``` r
 confusionMatrix(chaid.m2)
@@ -1359,13 +1359,13 @@ confusionMatrix(predict(chaid.m3), y)
 plot(chaid.m3)
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid213-1.png" width="900px" />
+<img src="/images/chaid213-1.png" width="900px" />
 
 ``` r
 plot(chaid.m3$finalModel)
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid213-2.png" width="900px" />
+<img src="/images/chaid213-2.png" width="900px" />
 
 A quick reminder that you can get relative variable importance with
 `varImp`. And of course the all important look at how well we predicted
@@ -1573,13 +1573,13 @@ confusionMatrix(predict(chaid.m4), y)
 plot(chaid.m4)
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid288-1.png" width="900px" />
+<img src="/images/chaid288-1.png" width="900px" />
 
 ``` r
 plot(chaid.m4$finalModel)
 ```
 
-<img src="chaidtutor2_files/figure-gfm/chaid288-2.png" width="900px" />
+<img src="/images/chaid288-2.png" width="900px" />
 
 Although this post is more about explaining how to use the tools than it
 is about actually fitting this fictional data, let’s review all four of

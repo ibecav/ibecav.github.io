@@ -1,0 +1,438 @@
+---
+title: "CHAID and caret -- a good combo -- June 6, 2018"
+author: "Chuck  Powell"
+date: "6/6/2018"
+output: github_document
+always_allow_html: yes
+tags: R dplyr CHAID caret
+---
+
+[In an earlier post](https://ibecav.github.io/chaidtutor1/) I focused on an in depth visit with CHAID (Chi-square automatic interaction detection).  There are lots of tools that can help you predict an outcome, or classify, but CHAID is especially good at helping you explain to **any audience** how the model arrives at it's prediction or classification.  It's also incredibly robust from a statistical perspective, making almost no assumptions about your data for distribution or normality.  This post I'll focus on marrying CHAID with the awesome [`caret` package](https://topepo.github.io/caret/index.html) to make our predicting easier and hopefully more accurate.  Although not strictly necessary you're probably best served by reading the original post first.
+
+We've been using a dataset that comes to us from the [IBM Watson Project](https://www.ibm.com/communities/analytics/watson-analytics-blog/hr-employee-attrition/) and comes packaged with the `rsample` library.  It's a very practical and understandable dataset.  A great use case for a tree based algorithm.  Imagine yourself in a fictional company faced with the task of trying to figure out which employees you are going to "lose" a.k.a. attrition or turnover.  There's a steep cost involved in keeping good employees, and training and on-boarding can be expensive.  Being able to predict attrition even a little bit better would save you lots of money and make the company better, especially if you can understand exactly what you have to "watch out for" that might indicate the person is a high risk to leave.
+
+## Setup and library loading
+
+If you've never used `CHAID` before you may also not have `partykit`.  `CHAID` isn't on `CRAN` but I have commented out the install command below.  You'll also get a variety of messages, none of which is relevant to this example so I've suppressed them.
+
+```{r setup, warning = FALSE, message = FALSE, echo=TRUE}
+# install.packages("partykit")
+# install.packages("CHAID", repos="http://R-Forge.R-project.org")
+require(rsample) # for dataset and splitting also loads broom and tidyr
+require(dplyr)
+require(CHAID)
+require(purrr) # we'll use it to consolidate some data
+require(caret)
+require(kableExtra) # just to make the output nicer
+```
+
+## Predicting attrition in a fictional company
+
+[Last time](https://ibecav.github.io/chaidtutor1/) I spent a great deal of time explaining the mechanics of loading the data.  This time we'll race right through.  If you need an explanation of what's going on please refer back.  I've embedded some comments in the code to follow along and changing the data frame name to `newattrit` is not strictly necessary it just mimics the last post.
+
+```{r chaid21, cache=TRUE}
+str(attrition) # included in rsample
+
+# the easy to convert because they are integers with less than 10 levels
+attrition <- attrition %>% 
+  mutate_if(function(col) length(unique(col)) <= 10 & is.integer(col), as.factor)
+
+# More difficult to get 5 levels
+attrition$YearsSinceLastPromotion <- cut(
+  attrition$YearsSinceLastPromotion,
+  breaks = c(-1, 0.9, 1.9, 2.9, 30),
+  labels = c("Less than 1", "1", "2", "More than 2")
+)
+
+# everything else just five more or less even levels
+attrition <- attrition %>% 
+  mutate_if(is.numeric, funs(cut_number(., n=5)))
+dim(attrition)
+str(attrition) 
+newattrit <- attrition %>% 
+  select_if(is.factor)
+dim(newattrit)
+```
+
+Okay we have data on 1,470 employees.  We have 30 potential predictor (features) or independent variables and the all important `attrition` variable which gives us a yes or no answer to the question of whether or not the employee left.  We're to build the most accurate predictive model we can that is also simple (parsimonious) and explainable. The predictors we have seem to be the sorts of data we might have on hand in our HR files and thank goodness are labelled in a way that makes them pretty self explanatory.
+
+Last post we explored the control options and built predictive models like the one below. [For a review of what the output means and how CHAID works please refer back](https://ibecav.github.io/chaidtutor1/).
+
+```{r chaid22, fig.height=10, fig.width=20, dpi=90, out.width="900px", cache=TRUE}
+# explore the control options
+ctrl <- chaid_control(minsplit = 200, minprob = 0.05)
+ctrl
+full_data <- chaid(Attrition ~ ., data = newattrit, control = ctrl)
+print(full_data)
+plot(
+  full_data,
+  main = "newattrit dataset, minsplit = 200, minprob = 0.05",
+  gp = gpar(
+    lty = "solid",
+    lwd = 2,
+    fontsize = 10
+  )
+)
+
+```
+
+## Over-fitting
+
+Okay we have a working predictive model.  At this point, however, we've been **cheating** to a certain degree! We've been using every available piece of data we have to develop the best possible model.  We've told the powerful all-knowing `algorithims` to squeeze every last bit of accuracy they can out of the data. We've told it to `fit` the best possible model. Problem is that we may have done that at the cost of being able to generalize our model to new data or to new situations. That's the problem of over-fitting in a nutshell. If you want a fuller understanding please consider [reading this post on EliteDataScience](https://elitedatascience.com/overfitting-in-machine-learning).  I'm going to move on to a solution for solving this limitation and that's where `caret` comes in.
+
+We're going to use `caret` to employ `cross-validation` a.k.a. `cv` to solve this challenge for us, or more accurately to mitigate the problem. [The same article explains](https://elitedatascience.com/overfitting-in-machine-learning#how-to-prevent) it well so I won't repeat that explanation here, I'll simply show you how to run the steps in `R`.
+
+This is also a good time to point out that `caret` has [extraordinarily comprehensive documentation](https://topepo.github.io/caret/) which I used extensively and I'm limiting myself to the basics.
+
+As a first step, let's just take 30% of our data and put is aside for a minute. We're not going to let chaid *see it* or know about it as we build the model. In some scenarios you have subsequent data at hand for checking your model (data from another company or another year or ...).  We don't, so we're going to self-impose this restraint.  Why 30%?  Doesn't have to be, could be as low as 20% or as high as 40% it really depends on how conservative you want to be, and how much data you have at hand.  Since this is just a tutorial we'll simply use 30% as a representative number.  We've already loaded both `rsample` and `caret` either of which is quite capable of making this split for us.  I'm arbitrarily going to use `rsample` syntax which is the line with `initial_split(newattrit, prop = .7, strata = "Attrition")` in it.  That takes our data set `newattrit` makes a 70% split ensuring that we keep our outcome variable `Attrition` as close to 70/30 as we can. *This is important because our data is already pretty lop-sided* for outcomes. The two subsequent lines serve to take the data contained in `split` and produce two separate dataframes, `test` and `train`. They have 440 and 1030 staff members each.  We'll set `test` aside for now and focus on `train`.
+
+```{r chaid23}
+# Create training (70%) and test (30%) sets for the attrition data.
+# Use set.seed for reproducibility
+#####
+set.seed(1234)
+split <- initial_split(newattrit, prop = .7, strata = "Attrition")
+train <- training(split)
+test  <- testing(split)
+```
+
+The next step is a little counter-intuitive but quite practical.  Turns out that many models do not perform well when you feed them a `formula` for the model even if they claim to support a formula interface (as CHAID does). [Here's an SO link](https://stackoverflow.com/questions/33088893/caret-random-forests-not-working-something-is-wrong-all-the-accuracy-metric) that discusses in detail but my suggestion to you is to always separate them and avoid the problem altogether.  We're just taking our `predictors` or `features` and putting them in `x` while we put our outcome in `y`.
+
+```{r chaid24}
+# create response and feature data
+features <- setdiff(names(train), "Attrition")
+x <- train[, features]
+y <- train$Attrition
+```
+
+Alright, let's get back on track. `trainControl` is the function within `caret` we need to use. Chapter 5 in the `caret` doco covers it in great detail.  I'm simply going to pluck out a few sane and safe options. `method = "cv"` gets us cross-validation. `number = 10` is pretty obvious. I happen to like seeing the progress in case I want to go for coffee so `verboseIter = TRUE`, and I play it safe and explicitly save my predictions `savePredictions = "final"`.  We put everything in `train_control` which we'll use in a minute.
+
+```{r chaid25}
+# set up 10-fold cross validation procedure
+train_control <- trainControl(method = "cv",
+                              number = 10,
+                              verboseIter = TRUE,
+                              savePredictions = "final")
+```
+
+Not surprisingly the `train` function in `caret` trains our model! It wants to know what our `x` and `y`'s are, as well as our training control parameters which we've parked in `train_control`. At this point we could successfully unleash the dogs of war (sorry Shakespeare) and train our model since we know we want to use `chaid`.  But let's change one other useful thing and that is `metric` which is what metric we want to use to pick the "best" model.  Instead of the default "accuracy" we'll use `Kappa` which as you may remember from the last post is more conservative measure of how well we did.
+
+>   **If you're running this code yourself this is a good time to take a coffee break.  I'll tell you later how to find out how long it took more or less exactly.  But there's no getting around it we're model building many more times so it takes longer.** 
+
+```{r chaid26, cache=TRUE}
+# train model
+chaid.m1 <- train(
+  x = x,
+  y = y,
+  method = "chaid",
+  metric = "Kappa",
+  trControl = train_control
+)
+```
+
+And.... we're done.  Turns out in this case the best solution was what `chaid` uses as defaults. The very last line of the output tells us that.  But let's use what we have used in the past for printing and plotting the results...
+
+```{r chaid27}
+chaid.m1 #equivalent to print(chaid.m1)
+plot(chaid.m1)
+```
+
+Wait.  What? These are not the output we're used to.  `caret` has changed the output from its' work (an improvement actually) but we'll have to change how we get the information out. Before we do that however, let's inspect what we have so far.  The output gives us a nice concise summary. 1030 cases with 30 predictors. It gives us an idea of how many of the 1030 cases were used in the individual folds `Summary of sample sizes: 928, 927, 927, 926, 928, 926, ...`.
+
+The bit about `alpha2`, `alpha4`, and `alpha3` is somewhat mysterious. We saw those names when we looked at the `chaid_control` documentation last post but why are they here?  We'll come back to that in a moment.  But it is clear that it thought Kappa of `0.1692826` was best.
+
+The plot isn't what we're used to seeing, but is easy to understand. `Kappa` is on the y axis, `alpha2` on the x axis and it's shaded/colored by `alpha4` (remember we left `alpha3` out of the mix).  The plot is a bit of overkill for what we did but we'll put it to better use later.
+
+But what about the things we were used to seeing? Well if you remember that `caret` is reporting averages of all the folds it sort of makes sense that the **best** final model results are now in `chaid.m1$finalModel` so we need to use that when we `print` or `plot`.  So in the next block of code let's:
+
+1.  Print the final model from `chaid` (`chaid.m1$finalModel`)
+2.  Plot the final model from `chaid` (`plot(chaid.m1$finalModel)`)
+3.  Produce the `confusionMatrix` across all folds (`confusionMatrix(chaid.m1)`)
+4.  Produce the `confusionMatrix` using the final model (`confusionMatrix(predict(chaid.m1), y)`)
+5.  Check on variable importance (`varImp(chaid.m1)`)
+6.  The best tuning parameters are stored in `chaid.m1$bestTune`
+7.  How long did it take? Look in `chaid.m1$times`
+8.  In case you forgot what method you used look here `chaid.m1$method` 
+9.  We'll look at model info in a bit `chaid.m1$modelInfo`
+10. The summarized results are here in a nice format if needed later `chaid.m1$results`
+
+Many of these you'll never need but I wanted to at least give you a hint of how complete the `chaid.m1` object is
+
+```{r chaid28, fig.height=10, fig.width=20, dpi=90, out.width="900px"}
+chaid.m1$finalModel
+plot(chaid.m1$finalModel)
+confusionMatrix(chaid.m1)
+confusionMatrix(predict(chaid.m1), y)
+varImp(chaid.m1)
+chaid.m1$bestTune
+chaid.m1$times
+chaid.m1$method
+chaid.m1$modelInfo
+chaid.m1$results
+
+```
+
+## Let's tune it up a little
+
+Having mastered the basics of using `caret` and `chaid` let's explore a little deeper.  By default `caret` allows us to adjust three parameters in our `chaid` model; `alpha2`, `alpha3`, and `alpha4`.  As a matter of fact it will allow us to build a grid of those parameters and test all the permutations we like, using the same cross-validation process. I'm a bit worried that we're not being conservative enough. I'd like to train our model using p values for alpha that are not .05, .03, and .01 but instead the de facto levels in my discipline; .05, .01, and .001.  The function in `caret` is `tuneGrid`.  We'll use the base `R` function `expand.grid` to build a dataframe with all the combinations and then feed it to `caret` in our next training.
+
+Therefore `search_grid` will hold the values and we'll add the line `tuneGrid = search_grid` to our call to `train`.  We'll call the results `chaid.m2` and see how we did (I'm turning off verbose iteration output since you've seen it on screen once already)...
+
+```{r chaid29, fig.height=10, fig.width=20, dpi=90, out.width="900px", cache=TRUE}
+# set up tuning grid default
+search_grid <- expand.grid(
+  alpha2 = c(.05, .01, .001),
+  alpha4 = c(.05, .01, .001),
+  alpha3 = -1
+)
+
+# no verbose
+train_control <- trainControl(method = "cv",
+                              number = 10,
+                              savePredictions = "final")
+
+# train model
+chaid.m2 <- train(
+  x = x,
+  y = y,
+  method = "chaid",
+  metric = "Kappa",
+  trControl = train_control,
+  tuneGrid = search_grid
+)
+
+chaid.m2
+plot(chaid.m2)
+chaid.m2$finalModel
+plot(chaid.m2$finalModel)
+confusionMatrix(chaid.m2)
+confusionMatrix(predict(chaid.m2), y)
+chaid.m2$times
+chaid.m2$results
+
+```
+
+Very nice!  Some key points here.  Even though our model got more conservative and has far fewer nodes, our accuracy has improved as measured both by traditional accuracy and `Kappa`.  That applies at both the average fold level but more importantly at the *best model* prediction stage.  Later on we'll start using our models to predict against the data we held out in `test`.
+
+The plot is also more useful now.  No matter what we do with `alpha2` it pays to keep `alpha4` conservative at .001 (blue line always on top) but keeping `alpha2` modest seems to be best.
+
+This goes to the heart of our conversation about over-fitting. While it may seem like 1,400+ cases is a lot of data we are at great risk of over-fitting if we try and build too complex a model, so sometimes a conservative track is warranted.
+
+## A Custom `caret` model
+
+Earlier I printed the results of `chaid.m1$modelInfo` and then pretty much skipped over discussing them.  Under the covers one of the strengths of `caret` is that it keeps some default information about how to tune various types of algorithms. They are visible at [https://github.com/topepo/caret/tree/master/models/files](https://github.com/topepo/caret/tree/master/models/files).
+
+My experience is that they are quite comprehensive and allow you to get your modelling done.  But sometimes you want to do something your own way or different and `caret` has provisions for that.  If you look at the default model setup for `CHAID` [here on GITHUB](https://github.com/topepo/caret/blob/master/models/files/chaid.R) you can see that it only allows you to tune on `alpha2`, `alpha3`, and `alpha4` by default.  That is not a comprehensive list of all the parameters we can work with in `chaid_control` see `?chaid_control` for a listing and brief description of what they all are.
+
+What if, for example, we wanted to tune based upon `minsplit`, `minbucket`, `minprob`, `maxheight` instead? How would we go about using all the built in functionality in `caret` but have it our way?  There's a section in the `caret` documentation called ["Using Your Own Model In Train"](https://topepo.github.io/caret/using-your-own-model-in-train.html) that does a great job of walking you through the steps.  At first it looked a little too complicated for my tastes, but I found that with a bit of trial and error I was able to hack up the existing `list` that I found on GITHUB and convert it into a list in my local environment that worked perfectly for my needs.
+
+I won't bore you with all the details and the documentation is quite good so it wound up being mainly a search and replace operation and adding one parameter.  I decided to call my version `cgpCHAID` and here's what the version looks like.
+
+```{r chaid210}
+# hack up my own
+
+cgpCHAID <- list(label = "CGP CHAID",
+                 library = "CHAID",
+                 loop = NULL,
+                 type = c("Classification"),
+                 parameters = data.frame(parameter = c('minsplit', 'minbucket', 'minprob', 'maxheight'),
+                                         class = rep('numeric', 4),
+                                         label = c('Numb obs in response where no further split', 
+                                                   "Minimum numb obs in terminal nodes", 
+                                                   "Minimum freq of obs in terminal nodes.",
+                                                   "Maximum height for the tree")
+                 ),
+                 grid = function(x, y, len = NULL, search = "grid") {
+                   if(search == "grid") {
+                     out <- data.frame(minsplit = c(20,30),
+                                       minbucket = 7,
+                                       minprob = c(0.05,0.01),
+                                       maxheight = -1)
+                   } else {
+                     out <- data.frame(minsplit = c(20,30),
+                                       minbucket = 7,
+                                       minprob = c(0.05,0.01),
+                                       maxheight = -1)
+                   }
+                   out
+                 },
+                 fit = function(x, y, wts, param, lev, last, classProbs, ...) {
+                   dat <- if(is.data.frame(x)) x else as.data.frame(x)
+                   dat$.outcome <- y
+                   theDots <- list(...)
+                   if(any(names(theDots) == "control")) {
+                     theDots$control$minsplit <- param$minsplit
+                     theDots$control$minbucket <- param$minbucket
+                     theDots$control$minprob <- param$minprob
+                     theDots$control$maxheight <- param$maxheight
+                     ctl <- theDots$control
+                     theDots$control <- NULL
+                   } else ctl <- chaid_control(minsplit = param$minsplit,
+                                               minbucket = param$minbucket,
+                                               minprob = param$minprob,
+                                               maxheight = param$maxheight)
+                   ## pass in any model weights
+                   if(!is.null(wts)) theDots$weights <- wts
+                   modelArgs <- c(
+                     list(
+                       formula = as.formula(".outcome ~ ."),
+                       data = dat,
+                       control = ctl),
+                     theDots)
+                   out <- do.call(CHAID::chaid, modelArgs)
+                   out
+                 },
+                 predict = function(modelFit, newdata, submodels = NULL) {
+                   if(!is.data.frame(newdata)) newdata <- as.data.frame(newdata)
+                   predict(modelFit, newdata)
+                 },
+                 prob = function(modelFit, newdata, submodels = NULL) {
+                   if(!is.data.frame(newdata)) newdata <- as.data.frame(newdata)
+                   predict(modelFit, newdata, type = "prob")
+                 },
+                 levels = function(x) x$obsLevels,
+                 predictors = function(x, surrogate = TRUE, ...) {
+                   predictors(terms(x))
+                 },
+                 tags = c('Tree-Based Model', "Implicit Feature Selection", "Two Class Only", "Accepts Case Weights"),
+                 sort = function(x) x[order(-x$minsplit, -x$minbucket, -x$minprob, -x$maxheight),])
+
+cgpCHAID
+
+```
+
+The final print statement shows what it looks like and confirms it is there ready for us to use in the local environment. The original `chaid` version in `caret` remains untouched and available in `caret` for when we want it.  To make use of our custom model we simply rebuild our search grid using our new parameters.
+
+```{r chaid211}
+# set up tuning grid cgpCHAID
+search_grid <- expand.grid(
+  minsplit = c(30,40),
+  minprob = .1,
+  minbucket = 25,
+  maxheight = 4
+)
+search_grid
+```
+
+Then to use it to train our third model `chaid.m3` we insert it into the `method` directive (**not quoted** because it's in the local environment).
+
+```{r chaid212, cache=TRUE}
+# train model
+chaid.m3 <- train(
+  x = x,
+  y = y,
+  method = cgpCHAID,
+  trControl = train_control,
+  metric = "Kappa",
+  tuneGrid = search_grid
+)
+```
+
+The process runs for a few minutes and then produces output very similar to what we received for `chaid.m2`.  We get summarized information across our 10 folds and the all important `The final values used for the model were minsplit = 40, minbucket = 25, minprob = 0.1 and maxheight = 4`.  I won't review all the details since I've already covered it I've simply printed it out to confirm it all works.
+
+```{r chaid213, fig.height=10, fig.width=20, dpi=90, out.width="900px", cache=TRUE}
+chaid.m3
+chaid.m3$finalModel
+confusionMatrix(chaid.m3)
+confusionMatrix(predict(chaid.m3), y)
+plot(chaid.m3)
+plot(chaid.m3$finalModel)
+
+```
+
+A quick reminder that you can get relative variable importance with `varImp`.  And of course the all important look at how well we predicted against our held out `test` data set.
+
+```{r chaid214, cache=TRUE}
+varImp(chaid.m3)
+confusionMatrix(predict(chaid.m3, newdata = test), test$Attrition)
+
+```
+
+One last exercise might also be fruitful.  Suppose the only thing you wanted to tell `chaid` was how deeply it was allowed to go in the tree. Let's run a simple example where we use all the defaults but force either a two level or three level solution.
+
+```{r chaid277, cache=TRUE}
+# set up tuning grid cgpCHAID
+search_grid <- expand.grid(
+  minsplit = c(30),
+  minprob = .01,
+  minbucket = 7,
+  maxheight = 3:4
+)
+
+# train model
+chaid.m4 <- train(
+  x = x,
+  y = y,
+  method = cgpCHAID,
+  metric = "Kappa",
+  trControl = train_control,
+  tuneGrid = search_grid
+)
+
+```
+
+Those simple steps produce `chaid.m4` which we can then investigate in the usual way.
+
+```{r chaid288, fig.height=10, fig.width=20, dpi=90, out.width="900px", cache=TRUE}
+chaid.m4
+chaid.m4$finalModel
+confusionMatrix(chaid.m4)
+confusionMatrix(predict(chaid.m4), y)
+plot(chaid.m4)
+plot(chaid.m4$finalModel)
+
+```
+
+Although this post is more about explaining how to use the tools than it is about actually fitting this fictional data, let's review all four of the models we built for comparative purposes.  If you need to review what all these measures are please consult this webpage [Confusion Matrix](http://www.dataschool.io/simple-guide-to-confusion-matrix-terminology/).
+
+```{r chaid299, cache=TRUE}
+confusionMatrix(predict(chaid.m1, newdata = test), test$Attrition)
+confusionMatrix(predict(chaid.m2, newdata = test), test$Attrition)
+confusionMatrix(predict(chaid.m3, newdata = test), test$Attrition)
+confusionMatrix(predict(chaid.m4, newdata = test), test$Attrition)
+
+```
+
+At this juncture we're faced with the same problem we had in my last post.  We're drowning in data from the individual `confusionMatrix` results. [We'll resort to the same `purrr` solution]((https://ibecav.github.io/chaidtutor1/)) to give us a far more legible table of results focusing on the metrics I'm most interested in. To do that we need to:
+
+1.  Make a `named list` called `modellist` that contains our 4 models with a descriptive name for each
+2.  Use `map` from `purrr` to apply the `predict` command to each model in turn to our `test` dataset
+3.  Pipe those results to a second `map` command to generate a confusion matrix comparing our predictions to `test$Attrition` which are the actual outcomes.
+4.  Pipe those results to a complex `map_dfr` (that I explained last time) that creates a dataframe of all the results with each CHAID model as a row.
+5.  Show us the names of the columns we have available.
+
+```{r chaid216a}
+modellist <- list("Default tune" = chaid.m1, 
+                  "a2 & a4 stricter" = chaid.m2, 
+                  "Custom parameters" = chaid.m3, 
+                  "3 or 4 levels" = chaid.m4)
+CHAIDResults <- map(modellist, ~ predict(.x, newdata = test)) %>% 
+   map(~ confusionMatrix(test$Attrition, .x)) %>%
+   map_dfr(~ cbind(as.data.frame(t(.x$overall)),as.data.frame(t(.x$byClass))), .id = "ModelNumb")
+names(CHAIDResults)
+```
+
+From the list of available columns let's use `dplyr` to select just the columns we want, round the numeric columns to 3 digits and then use `kable` to make a pretty table that is much easier to understand.
+
+```{r chaid216b}
+CHAIDResults %>% 
+  select("ModelNumb", "Accuracy", "Kappa", "Sensitivity", "Specificity", "Neg Pred Value", "F1", "Balanced Accuracy") %>%
+  mutate_if(is.numeric,funs(round(.,3))) %>%
+  kable("html") %>% 
+   kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"))
+```
+
+By nearly every measure we care about, chaid.m2 (where the best fit was alpha2 = 0.05 and alpha4 = 0.001) clearly emerges as the best predictor against out `test` dataset.  **N.B.** notice that if you only focus on the default accuracy measure, the models are all very close.  But if you focus on more precise measures like Kappa and Negative Predictive Value (which in this case is a great indicator of how well we are specifically getting our prediction of attrition correct -- compared to the more common case of predicting that people will stay)
+
+It's a very simple and parsimonious model, where we only need to know three things about the staff member to get pretty accurate predictions;  `Overtime`, `YearsAtCompany`, and `JobLevel`. It's very clear that some of the other variables may be at work here but we should acquire more data to make that assessment rather than trying to overpredict with the data we have on hand.
+
+## Done!
+
+I hope you've found this useful.  I am always open to comments, corrections and suggestions.
+
+Chuck (ibecav at gmail dot com)
+
+### License
+<a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/"><img alt="Creative Commons License" style="border-width:0" src="https://i.creativecommons.org/l/by-sa/4.0/88x31.png" /></a><br />This work is licensed under a <a rel="license" href="http://creativecommons.org/licenses/by-sa/4.0/">Creative Commons Attribution-ShareAlike 4.0 International License</a>.
+
+

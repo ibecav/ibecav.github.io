@@ -1,0 +1,471 @@
+---
+title: "ANCOVA example"
+author: "Chuck  Powell"
+date: "4/18/2019"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Analysis of covariance (ANCOVA) using R.
+
+I recently had the need to run an ANCOVA, not a task I perform all that often
+and my first time using R to do so (I've done it in `SPSS` and `SAS` before).
+Having a decent theoretical idea of what I had to do I set of in search of
+decent documentation of how to accomplish it in R. I was quite disappointed with
+what I found after a decent amount of time scouring the web (or at least I
+thought so). I found "answers" in places like Stack Overflow" and "Cross
+Validated" as well as various free and open notes from academic courses. Many
+were dated, a few off topic, a few outright incorrect if you ask me but nothing
+I could just pick up and use. 
+
+So I wrote my own top to bottom example that I'll
+publish on my blog not necessarily because others will find it but more to
+ensure I document my own learning. I may also cross post a shortened version in
+a couple of places and point back to this longish posting.
+
+### Before you read any farther
+
+Some constraints I'm placing on this post that may impact your desire to 
+read it.
+
+1. Yes ANOVA is a subset of the general linear model and specifically in R `aov`
+   is just a wrapper around `lm`. I can't tell you the number of times I read that
+   and it's true. **But**, in many disciplines and for me it is an important subset
+   worthy of it's own time. You won't find any info here about how to do things
+   with `lm` although you certainly could.
+2. Yes contrasts can play an important role in understanding your results. This
+   is especially true if you happen to have an unbalanced design. I'm only going to
+   glance on the topic here since I'm going to run a balanced design and therefore
+   contrasts are tangential. For a very good academic discussion of contrasts
+   especially using R and especially at the introductory level I very **strongly**
+   recommend [Learning Statistics with R](https://learningstatisticswithr.com/), 
+   (search and ye shall find) where Danielle has done a great job of
+   covering the topic in several places. The text is free for the download and is
+   invaluable although it doesn't cover ANCOVA per se.
+3. I'm going to use packages above and beyond `base` and `stats` as needed.
+   Everything could be done with the basics but this is a practical approach not so
+   much a theoretical approach.  I'll even put in a very subtle plug for a function
+   I wrote and maintain on `CRAN` although it's by no means required.
+
+*N.B.* - I don't expect this will reach the New York Times best-seller list but
+questions or comments if it useful or if I have missed something are most
+certainly welcome.
+
+### Background and problem statement
+
+The [Wikipedia definition of
+ANCOVA](https://en.wikipedia.org/wiki/Analysis_of_covariance) is actually quite
+good and I won't bother to repeat it. Some other keys phrases you'll hear are
+that ANCOVA allows you to *"control for"* or *"partial out"* the covariate which
+gives you the opportunity to estimate `partial means` or `marginal means` which
+at the end of the day is why one uses ANOVA/ANCOVA versus regression. They use
+the same math but ANOVA/ANCOVA typically reports in means and mean differences
+while regressions reports on the slopes of the regression terms. Yes you can
+move back and forth but many disciplines have a preference and it can be one 
+less step.
+
+I wanted to make sure I used a dataset that was easily accessible. I mean that
+both in terms of being available in a package that most users will all ready
+have as well on a topic that many will find intuitively understandable with no
+specialized knowledge. I selected the `diamonds` dataset from `ggplot2`. I'll
+cut it down some and balance it but those are trivial steps that will hopefully
+make things clearer.
+
+So imagine that you're shopping for a diamond. You'd like to get the possible
+value for the money you spend but you have very little knowledge about what
+influences the price you pay versus the value you get. The sales people speak
+about various things that influence the price such as "cut" and "clarity" and
+"color" and "carats". You don't have a lot to spend so you're going to limit
+yourself to something modest but you'd like to know you got good value for what
+you paid. Enter the `diamond` dataset from `ggplot2` if you have library
+available you can get a terse description with `?diamonds`.
+
+Let's say for the sake of argument you'd like to know more about how these
+factors of `cut` and `color` impact the price you'll pay. Let's go ahead and
+get things set up in `R` so we can proceed, load the right libraries etc..
+You'll see in the code I recommend grabbing the latest version of a package I
+maintain but it is totally optional and there's nothing there you can't do for
+yourself if you prefer. I just wrote it so I didn't have to remember to repeat a
+bunch of steps in `R` to run a 2Way ANOVA. You can [see the docs
+here](https://ibecav.github.io/CGPfunctions/articles/Using-Plot2WayANOVA.html).
+I'm going to assume you're comfortable with a basic ANOVA although you're
+welcome to review the vignette if that's helpful. So let's load the libraries 9i
+suppressed all the messages here), and check out the structure of the dataset.
+
+
+```{r basics, warnings=FALSE, message=FALSE}
+require(car) # get the right sums of squares calculations
+require(dplyr) # for manipulating our data
+require(ggplot2) # for plotting and for our dataset
+require(sjstats) # save us time computing key ANOVA stats beyond car
+require(broom) # nice for making our results in neat tibbles
+require(emmeans) # for marginal means calculations
+# a shameless plug for a function I wrote called Plot2WayANOVA
+# optional for you
+# devtools::install_github("ibecav/CGPfunctions")
+library(CGPfunctions)
+theme_set(theme_bw()) # set theme
+str(diamonds)
+```
+
+Okay just crossing `cut` and `color` would give us 35 cells in a table of means
+( 5 levels times 7 levels). I've also admitted I'm a cheapskate and don't want a
+huge diamond so let's pare our data down a bit to something more manageable. So
+let's use `dplyr` to create a subset of the data where we focus on "fair" and
+"good" cuts, and colors "E", "F", and "G" with a carat weight of less than 1.75.
+This is also a good time to admit I cheated and peeked and saw that the data
+were likely to be very unbalanced `table(diamonds$color, diamonds$cut)`, so at
+this point I'm also going to force our data into a balanced design by ensuring
+that we randomly sample the same number of data points into each cell. I've used
+set.seed so you should be able to reproduce the same dataset if you choose.
+
+```{r datawrangle, cache=TRUE}
+set.seed(1234)
+diamonds2 <- filter(diamonds, 
+                    cut %in% c("Fair", "Good") & 
+                    color %in% c("E", "F", "G") & 
+                    carat < 1.75) 
+diamonds2 <- droplevels(diamonds2)
+one <- diamonds2 %>% filter(cut == "Fair" & color == "E") %>% sample_n(218)
+two <- diamonds2 %>% filter(cut == "Fair" & color == "F") %>% sample_n(218)
+three <- diamonds2 %>% filter(cut == "Fair" & color == "G") %>% sample_n(218)
+four <- diamonds2 %>% filter(cut == "Good" & color == "E") %>% sample_n(218)
+five <- diamonds2 %>% filter(cut == "Good" & color == "F") %>% sample_n(218)
+six <- diamonds2 %>% filter(cut == "Good" & color == "G") %>% sample_n(218)
+diamonds2 <- bind_rows(one, two, three, four, five, six)
+str(diamonds2)
+```
+
+### A note on balanced designs
+
+As I noted earlier I'm really not interested in digressing to talk about why the
+concept of a balanced design is important to your work. Please do consult
+[Learning Statistics with R](https://learningstatisticswithr.com/) for more
+details. At this point I'm simply going to encourage you to always use "Type II"
+sums of squares from the `car` package if there is any chance your design is
+unbalanced. If your design is balanced they give the same answer. The contrast
+you choose is also if you are unbalanced and are using Type III.
+
+Are unbalanced designs completely wrong and to be avoided at all costs? Not
+exactly... here are three things they impact in order of likelihood.
+
+1. They always impact your power, you ability to detect significant differences.
+   Your power is limited by the size of your smallest cell.
+2. They usually impact your ability to divide the sums of squares cleanly to
+   100%. You may wind up with unexplained variance that is due to an effect but you
+   won't which effect. This is different than unexplained (residual variance).
+3. The least likely but most worrisome is that it will mask an important
+   relationship in your data.
+
+### Back to the diamonds
+
+Before we look at ANCOVA lets run an ANOVA. We have two ordinal factors for
+independent (predictor) variables `cut` and `color` and one dependent (outcome)
+variable the `price`. A classic two-way ANOVA. We could simply run `aov(price ~
+cut * color, diamonds2) and then a bunch of other commands to get the
+information we need. I found that a bit tedious and annoying plus I wanted to be
+able to plot the results to look at any possible interactions. So I wrote a
+function. Everything in it you can do by hand but I think it does a pretty good
+job wrapping the process in one function. So ...
+
+
+```{r plot2way, cache=TRUE, fig.height=4.5, fig.width=7, width=120}
+Plot2WayANOVA(price ~ color * cut, 
+              diamonds2,
+              mean.label = TRUE)
+
+```
+
+It does it's job of plotting the results and providing you with nice summaries
+of not just the ANOVA table but the table of means, post hoc tests if needed and
+even testing classic assumptions. it also tests for whether your design is
+balanced and always uses type II sums of squares.
+
+Well this is unfortunate! Looks like I won't be publishing the results in *JODR
+- The Journal of Obscure Diamond Results* since not a single one of my ANOVA
+terms is significant at the p<.05 level. The model seems to be a terrible fit
+whether I look at R Squared or AIC or BIC, neither `cut` nor `color` seem to
+matter although the interaction term is "marginally significant".
+
+Should we conclude `cut` and `color` don't matter? Are they just immaterial with
+no discernible impact on pricing?
+
+### ANCOVA helps our understanding
+
+As you have probably already guessed that's not where we're heading. Remember
+that Wikipedia article? A telling quote from Tabachnick, B. G. and Fidell, L. S.
+(2007) is in there...
+
+> ANCOVA can be used to increase statistical power (the probability a
+significant difference is found between groups when one exists) by reducing the
+within-group error variance.
+
+So with ANCOVA we're going to add one or more continuous variables known as
+covariates which are "hiding" the relationship between our factors of interest
+`cut` and `color`, if we can control for or partial the covariate out then we'll
+hopefully be likely to "see" the impact of `cut` and `color` on price. It should
+be something we know is linearly related to `price` but distinct from `cut` and
+`color`.
+
+So looking at our data above it hopefully is becoming obvious to you. On surface
+to meet the criteria of being a continuous numeric variable we have `"carat"`,
+`"depth"`, `"table"`, `"x"`, `"y"` and `"z"`. Since `clarity` is ordered we
+could force it to an integer and use it but let's not. Speaking for me, I'm
+pretty sure size as measured in weight `carat` is going to be related to price
+of the diamond. I don't know much about diamonds but I've heard size adds to the
+cost...
+
+So what we want to do now is confirm our hunch it is linearly related as well as
+hope that it is not strongly correlated with our current predictors `cut` and
+`color` we're looking for a variable that reduces the variance but is not
+entangled with our current IVs. So first a scatter plot with the regression and
+loess lines followed by a `glance` at the linear models `price ~ carat`, `carat
+~ cut`, and `carat ~ color`.
+
+
+```{r potcovariate, cache=TRUE, fig.height=4.5, fig.width=7}
+ggplot(diamonds2, aes(x = carat, y= price)) + 
+  geom_point(alpha = 1/10) + 
+  geom_smooth(method = "loess", color = "red") + 
+  geom_smooth(method = "lm", color = "blue")
+broom::glance(lm(price ~ carat, diamonds2))
+broom::glance(lm(carat ~ cut, diamonds2))
+broom::glance(lm(carat ~ color, diamonds2))
+caratonly <- lm(price ~ carat, diamonds2)
+```
+
+**Excellent news! Our potential covariate `carat` is highly correlated with
+`price` (r = `r round(sqrt(broom::glance(caratonly)$r.squared),2)`) while having
+near zero correlations with `cut` (r = `r round(sqrt(broom::glance(lm(carat ~
+cut, diamonds2))$r.squared),2)`) and `color` (r = `r round(sqrt(broom::glance(lm(carat ~ color, diamonds2))$r.squared),2)`).**
+
+### Comparing models
+
+We're going to compare two different models in a step by step fashion using
+the same tools in `R` for each step, `aov` to create the model, `car::Anova` to
+display the ANOVA table and ensure we're using type 2 sums of squares.
+`broom::glance` to get information about overall fir like R squared and AIC, and
+finally `sjstats::anova_stats` to give us a nice clean display including effect
+sizes for the terms.
+
+So our original model without a covariate looked like this (you can scroll back
+and look but I assure you this is it).
+
+```{r noCOVmodel, cache=TRUE}
+noCOVmodel <- aov(price ~ cut * color, diamonds2)
+car::Anova(noCOVmodel, type = 2)
+broom::glance(noCOVmodel)
+sjstats::anova_stats(car::Anova(noCOVmodel, type = 2)) %>% select(1:7)
+```
+
+### Adding `carat` to the model
+
+Let's add another term to the model to include `carat`, we're not going to let it
+interact with the other factors so we'll use a plus sign. There's nothing
+especially tricky about this, we're just adding another predictor to our model,
+it's not exactly traditional ANOVA because it's a continuous numeric variable
+rather than a factor, but it's simple to imagine.
+
+```{r COVmodel, cache=TRUE}
+COVmodel <- aov(price ~ cut * color + carat, diamonds2)
+car::Anova(COVmodel, type = 2)
+broomExtra::glance(COVmodel)
+sjstats::anova_stats(car::Anova(COVmodel, type = 2)) %>% select(1:7)
+```
+
+Wow that sure changed our results didn't it? Suddenly `cut` and `color` matter!
+Make no mistake they don't have nearly the impact that `carat` does but at least
+we can reliably see their impact on `price` by measures such as eta squared (`etasq`).
+
+That's because we originally had 9,553,303,035 in residual sums of squares but
+by adding `carat` we've reduced that number to 2,308,863,799 which makes our
+factors (`cut` and `color`) (the numerators) much more potent.
+
+A quick peek into what's changing may help. Let's build a little tibble that
+shows us what's going on. The first three columns are straight from the
+`diamonds2` dataset, our `price`, `cut`, and `color`. The next column shows the
+"prediction" made using our initial model. Every row with the same condition
+e.g. "Fair" & "E" gets the same entry "3406" the mean for the cell. We can see
+that when we use just `carat` as the predictor we get very different predictions
+(although of course the same size gets the same prediction). Our `COVmodel`
+predictions yield a third set of answers in the final column that makes use of
+all the information available.
+
+```{r quickpeek, cache=TRUE}
+diamonds3 <- diamonds2 %>% 
+   mutate(OriginalPred = predict(noCOVmodel), 
+          WithCaratPred = predict(COVmodel), 
+          CaratOnlyPred = predict(caratonly)) %>% 
+   select(price, cut, color, OriginalPred, carat, CaratOnlyPred, WithCaratPred)
+diamonds3
+```
+
+### More progress with `emmeans`
+
+Okay, we're making progress here but this isn't all we can or should do. We have
+a good sense that adding `carat` as a covariate makes for a much more accurate
+model. But, we're not interested in `carat` per se, it's not that it's
+unimportant (clearly it matters) we're just interested in what happens to `cut`
+and `color` when we control for `carat`. That's where the `emmeans` package can
+help.
+
+The `emmeans` package allows us to take our model(s) and compute the *estimated
+marginal means* a.k.a. *predicted model means* or *least squares means*. The
+package includes functions to not only compute them but also plot them as well
+as make comparisons. We've already done that above for our model with no
+covariate `noCOVmodel` but let's see what that looks like just as a baseline.
+
+```{r means, cache=TRUE}
+# first the means
+emmeans::pmmeans(noCOVmodel, "cut", by = "color")
+# then plot them
+emmeans::emmip(noCOVmodel, cut ~ color, CIs = TRUE)
+# pairwise comparisons
+pairs(emmeans::pmmeans(noCOVmodel, "color", by = "cut"), adjust = "scheffe")
+# not done above you can easily specify just one factor
+emmeans::pmmeans(noCOVmodel, "cut")
+# or the other factor
+emmeans::pmmeans(noCOVmodel, "color")
+
+```
+
+### Controlling for `carat`
+
+None of that information is what we're after however. We have the other model
+`COVmodel` with `carat` added and what we need are the estimated means with
+`carat` controlled for, or partialled out. We want to know the predicted or
+estimated means for our 6 conditions as if size (`carat`) were controlled for.
+
+
+```{r means2, cache=TRUE}
+emmeans::pmmeans(COVmodel, "carat")
+emmeans::pmmeans(COVmodel, "cut", by = "color")
+emmip(COVmodel, cut ~ color, CIs = TRUE)
+
+```
+
+For me comparing the two plots tells a striking story about what role `cut` and
+`color` play if we separate out the effect of size. If you look t the tables of
+means you can see they are different but looking at the plot gives you a much
+better idea of just how much the pattern has changed.
+
+We can also run the appropriate significance tests using the very conservative
+`scheffe` option.
+
+```{r means3, cache=TRUE}
+pairs(emmeans::pmmeans(COVmodel, "cut", by = "color"), adjust = "scheffe")
+pairs(emmeans::pmmeans(COVmodel, "color", by = "cut"), adjust = "scheffe")
+pairs(emmeans::pmmeans(COVmodel, "color"), adjust = "scheffe")
+pairs(emmeans::pmmeans(COVmodel, "cut"), adjust = "scheffe")
+
+```
+
+Let's use `ggplot` to combine the two manually into one plot. We'll plot the
+original model with dashed lines and the new model with covariate in dark bold
+lines.
+
+```{r finalplot, cache=TRUE, warning=FALSE, cache=TRUE, fig.height=4.5, fig.width=8}
+withCOV <- broom::tidy(emmeans::pmmeans(COVmodel, "cut", by = "color"))
+noCOV <- broom::tidy(emmeans::pmmeans(noCOVmodel, "cut", by = "color"))
+ggplot(data = withCOV, 
+       aes(x = color, 
+           y = estimate, 
+           group = cut, 
+           color = cut)) +
+   geom_point(shape = 18, 
+              size = 4) +
+   geom_line(size = 2) +
+   ggrepel::geom_label_repel(aes(label = round(estimate, 2)),
+                             nudge_x = -.35,
+                             color = "black") +
+   geom_point(data = noCOV,
+              aes(x = color, 
+                  y = estimate, 
+                  group = cut, 
+                  color = cut)) +
+   geom_line(data = noCOV,
+              aes(x =color, 
+                  y = estimate, 
+                  group = cut, 
+                  color = cut),
+             linetype = 2) +
+   ggrepel::geom_label_repel(data = noCOV,
+                             aes(label = round(estimate, 2)),
+                             nudge_x = .35,
+                             color = "black") +
+   labs(title = "Estimated Mean Diamond Price",
+        subtitle = "Dashed line without carat as a covariate",
+        color = "Cut") +
+   ylab("Price") +
+   xlab("Color") +
+   expand_limits(y = c(2700,4200))
+```
+
+### Measuring the effects
+
+The final thing we'd like to do is to better our understanding of the "effect
+size" of `color` and `cut` when we control for `carat`. Earlier we ran
+`sjstats::anova_stats(car::Anova(COVmodel, type = 2)) %>% select(1:7)` but that
+isn't quite what we want, since the information about `carat` is still
+influencing our computations. We want to remove `carat` from the calculations.
+The trick to doing that in `R` with `aov` is to make `carat` an `Error` term. It
+sounds strange in some ways if you ask me, but it is effective in getting what we
+want.
+
+Under the hood `aov` will create a model with two strata, Stratum 1 is all about
+our covariate `carat`. It pulls out or controls for its influence so that Stratum
+2 which is labelled *"Within"* now contains the ANOVA for the other variables
+controlling for `carat`. The `Within` label always puts me off a bit since it
+makes me want to think of a within subjects design (which this clearly isn't).
+But it's having just the impact we like when you inspect the output. `cut` and
+`color` do matter! There's hope we'll get published in the *JODR* yet.
+
+```{r COVmodelError, cache=TRUE}
+COVmodelError <- aov(price ~ cut * color + Error(carat), diamonds2)
+summary(COVmodelError)
+car::Anova(COVmodelError$Within, type = 2)
+broomExtra::glance(COVmodelError$Within)
+sjstats::anova_stats(car::Anova(COVmodelError$Within, type = 2))  %>% select(1:7)
+```
+
+### What don't we know?
+
+1. **That this example would apply to across the rest of the dataset.** Remember
+   that one of the steps we took early on was to select only certain levels of our
+   factors `color` and `cut` and even after that to choose balance over
+   completeness.
+
+
+2. **How badly we violated key assumptions about our data.** We know we have
+   some evidence of heteroskedasticity and non-normality. I also, for the sake of
+   brevity, did not discuss interactions at the second order between the covariate
+   and our factors.
+
+
+### Done!
+
+I hope you've found this useful. I am always open to comments, corrections and
+suggestions.
+
+
+Chuck (ibecav at gmail dot com)
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

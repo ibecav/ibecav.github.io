@@ -1,8 +1,10 @@
 ---
-title: "ANCOVA example"
+title: "ANCOVA example -- April 18, 2019"
 author: "Chuck  Powell"
 date: "4/18/2019"
-output: html_document
+output: github_document
+always_allow_html: yes
+tags: R dplyr 
 ---
 
 ```{r setup, include=FALSE}

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: ANCOVA example – April 18, 2019
-tags: R dplyr
+tags: R dplyr ggplot2 ANOVA ANCOVA Plot2WayANOVA
 ---
 
 I recently had the need to run an ANCOVA, not a task I perform all that

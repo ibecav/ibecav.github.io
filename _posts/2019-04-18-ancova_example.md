@@ -185,7 +185,7 @@ Not exactly… here are three things they impact in order of likelihood.
     cell.
 2.  They usually impact your ability to divide the sums of squares
     cleanly to 100%. You may wind up with unexplained variance that is
-    due to an effect but you won’t which effect. This is different than
+    due to an effect but you won’t know which effect. This is different than
     unexplained (residual variance).
 3.  The least likely but most worrisome is that it will mask an
     important relationship in your data.

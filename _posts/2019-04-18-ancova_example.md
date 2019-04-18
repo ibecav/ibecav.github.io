@@ -7,16 +7,16 @@ tags: R dplyr ggplot2 ANOVA ANCOVA Plot2WayANOVA
 I recently had the need to run an ANCOVA, not a task I perform all that
 often and my first time using R to do so (I’ve done it in `SPSS` and
 `SAS` before). Having a decent theoretical idea of what I had to do I
-set of in search of decent documentation of how to accomplish it in R. I
+set off in search of decent documentation on how to accomplish it in R. I
 was quite disappointed with what I found after a decent amount of time
 scouring the web (or at least I thought so). I found “answers” in places
-like Stack Overflow" and “Cross Validated” as well as various free and
+like "Stack Overflow" and “Cross Validated” as well as various free and
 open notes from academic courses. Many were dated, a few off topic, a
-few outright incorrect if you ask me but nothing I could just pick up
+few outright incorrect, if you ask me, but nothing I could just pick up
 and use.
 
-So I wrote my own top to bottom example that I’ll publish on my blog not
-necessarily because others will find it but more to ensure I document my
+So I wrote my own top to bottom example that I’ll publish on this blog. Not
+necessarily because others will find it, but more to ensure I document my
 own learning. I may also cross post a shortened version in a couple of
 places and point back to this longish posting.
 
@@ -48,8 +48,8 @@ read it.
     although it’s by no means required.
 
 *N.B.* - I don’t expect this will reach the New York Times best-seller
-list but questions or comments if it useful or if I have missed
-something are most certainly welcome.
+list but questions or comments if it is useful or if I have missed
+something, are most certainly welcome.
 
 ### Background and problem statement
 
@@ -73,13 +73,13 @@ dataset from `ggplot2`. I’ll cut it down some and balance it but those
 are trivial steps that will hopefully make things clearer.
 
 So imagine that you’re shopping for a diamond. You’d like to get the
-possible value for the money you spend but you have very little
+best possible value for the money you spend but you have very little
 knowledge about what influences the price you pay versus the value you
 get. The sales people speak about various things that influence the
 price such as “cut” and “clarity” and “color” and “carats”. You don’t
 have a lot to spend so you’re going to limit yourself to something
 modest but you’d like to know you got good value for what you paid.
-Enter the `diamond` dataset from `ggplot2` if you have library available
+Enter the `diamonds` dataset from `ggplot2` if you have library available
 you can get a terse description with `?diamonds`.
 
 Let’s say for the sake of argument you’d like to know more about how
@@ -93,7 +93,7 @@ so I didn’t have to remember to repeat a bunch of steps in `R` to run a
 here](https://ibecav.github.io/CGPfunctions/articles/Using-Plot2WayANOVA.html).
 I’m going to assume you’re comfortable with a basic ANOVA although
 you’re welcome to review the vignette if that’s helpful. So let’s load
-the libraries 9i suppressed all the messages here), and check out the
+the libraries (I suppressed all the messages here), and check out the
 structure of the dataset.
 
 ``` r

@@ -1,7 +1,7 @@
 ---
 layout: post
 title: Upgrading to R 3.6.0 on a Mac – May 14, 2019
-tags: R dplyr
+tags: R dplyr functions
 ---
 
 Every time there is a new major update from [The R

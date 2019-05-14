@@ -1,0 +1,259 @@
+---
+title: "Upgrading to R 3.6.0 on a Mac"
+author: "Chuck  Powell"
+date: "5/14/2019"
+output: github_document
+always_allow_html: yes
+tags: R dplyr 
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r set-options, echo=FALSE, cache=FALSE}
+options(width = 110)
+```
+
+### Mixed emotions
+
+Every time there is a new major update from [The R
+Foundation](https://www.r-project.org/) (like the recent [3.6.0
+release](https://cran.r-project.org/) in April). I'm always happy to see the
+continuing progress and the combination of new features and bug fixes, but I
+also dread the upgrade because it means I have to address the issue of what to
+do about the burgeoning number of packages (libraries) I have installed.
+
+
+Up until now I confess I simply have sort of "winged it", done the upgrade and
+either manually thought about what packages I **"really"** needed or just
+grabbed a few essentials and then let my needs dictate whatever else I reloaded.
+This time I decided to get serious about the process and pay attention to not
+only what I was doing but documenting it and keeping a record via some amount
+of coding (and this post).
+
+I'm aware that there are [full-fledged package
+managers](https://blog.learningtree.com/manage-packages-in-r-how/) like
+`packrat` and `checkpoint` and even a package designed to manage the upgrade for
+you on windows, but I'm a Mac user and wanted to do things my own way and I
+don't need that level of sophistication.
+
+
+So I set out to do the following:
+
+1. Capture a list of everything I had installed under `R 3.5.3` and, very 
+   importantly, as much as I could about where I got the package e.g. 
+   `CRAN` or `GitHub` or ???
+2. Keep a copy for my own edification and potential future use.
+3. Do a clean `R 3.6.0` install and not copy any library directories manually.
+4. Take a look at the list I produced in #1 above but mainly to just download 
+   and install the exact same packages if I can find them.
+5. Make the process mainly scripted and automatic and available again for 
+   the future.
+
+### Helpful background
+
+As I was searching the web I found a few helpful posts that saved me time in
+building my own solution. The primary was [this
+post](https://stackoverflow.com/questions/49698348/how-to-find-out-which-package-was-installed-from-github-in-my-r-library)
+on `Stack Overflow`. I wanted to extend the function listed there to do a little
+more of my work for me. Instead of just being able to generate a listing of what
+I had installed from GitHub I wanted to be able to determine most of the places
+I get packages from, which are `CRAN`, `GitHub` and `R-Forge`.
+
+
+So let's load `tidyverse` to have access to all it's various functions and
+features and then build a dataframe called `allmypackages` with the basic
+information about the packages I currently have installed in R 3.5.3.
+
+
+**Note - I'm writing this after already upgrading so there will be a few inconsistencies in the output**
+
+* This could just as easily be a `tibble` but I chose `as.data.frame`
+* I am deliberately removing base packages from the dataframe by `filter`
+* I am eliminating columns I really don't care about with `select`
+
+```{r step1, warnings=FALSE, message=FALSE}
+require(tidyverse)
+allmypackages <- as.data.frame(installed.packages())
+allmypackages <- allmypackages %>%
+  filter(Priority != "base" | is.na(Priority)) %>%
+  select(-c(Enhances:MD5sum, LinkingTo:Suggests)) %>%
+  droplevels()
+str(allmypackages)
+```
+
+### A function to do the hard work
+
+As I mentioned above the stack overflow post was a good start but I wanted more
+information from the function. Rather than TRUE/FALSE to is it github I would
+like as much information as possible about where I got the package. The
+`package~source` function will be applied to the `Package` column for each row
+of our dataframe. For example
+`as.character(packageDescription("ggplot2")$Repository)` will get back "CRAN",
+and `as.character(packageDescription("CHAID")$Repository)` will yield "R-Forge".
+For GitHub packages the result is `character(0)` which has a `length` of zero.
+So we'll test with an `if else` clause. If we get an answer like "CRAN" we'll
+just `return` it. If not, we'll see if there is a GitHub repo listed with
+`as.character(packageDescription(pkg)$GithubRepo)` as well as a GitHub username
+`as.character(packageDescription(pkg)$GithubUsername)`. If they exist we'll
+concatenate and return. If not we'll return "Other". Besides being good
+defensive programming this may catch the package you have built for yourself as
+is the case for me.
+
+
+```{r step2, warnings=FALSE, message=FALSE}
+package_source <- function(pkg){
+  x <- as.character(packageDescription(pkg)$Repository)
+  if (length(x)==0) {
+    y <- as.character(packageDescription(pkg)$GithubRepo)
+    z <- as.character(packageDescription(pkg)$GithubUsername)
+    if (length(y)==0) {
+      return("Other")
+    } else {
+      return(str_c("GitHub repo = ", z, "/", y))
+    }
+  } else {
+    return(x)
+  }
+}
+# show the first 60 as an example
+head(sapply(allmypackages$Package, package_source), 60)
+```
+
+### What's in your libraries?
+
+Now that we have the `package_source` function we can add a column to our data
+frame and do a little looking.
+
+
+```{r step3, warnings=FALSE, message=FALSE}
+allmypackages$whereat <- sapply(allmypackages$Package, package_source)
+str(allmypackages)
+table(allmypackages$whereat)
+allmypackages %>% 
+  filter(whereat == "Other") %>%
+  select(Package, Version)
+```
+
+And just to be on the safe side we'll also write a copy out as a csv file so we
+have it around in case we ever need to refer back.
+
+```{r step4, warnings=FALSE, message=FALSE}
+write.csv(allmypackages, "mypackagelistMay2019.csv")
+```
+
+### Go ahead and install R 3.6.0
+
+At this point we have what we need, so go ahead and download and install R
+3.6.0. At the end of the installation process you'll have a pristine copy with a
+new library directory. When next you restart R and R Studio you'll see a clean
+new version. Let's make use of our data frame to automate most of the process of
+getting nice clean copies of the libraries we want.
+
+We'll start by getting the entire `tidyverse` since we need several parts and
+because installing it will trigger the installation of quite a few dependencies
+and bootstrap our work.
+
+```{r step5, warnings=FALSE, message=FALSE, eval=FALSE}
+# post upgrade with output surpessed
+install.packages("tidyverse")
+library(tidyverse)
+```
+
+Now we have R 3.6.0 and some additional packages. Let's see what we can do.
+First let's create two dataframes, one with our old list and one with what we
+have right now. Then we can use `anti_join` to make a dataframe that lists the
+differences `thediff`. We can use `filter` and `pull` to generate a vector of
+just the the packages that are on CRAN we want to install. 
+
+**Note -- I'm faking
+the output rather than reinstalling all these packages on my machine so you will
+see packages from the `tidyverse` in the listing **
+
+
+```{r step6, warnings=FALSE, message=FALSE, results='hide'}
+oldpackages <- read.csv("mypackagelistMay2019.csv")
+allmypackages <- as.data.frame(installed.packages())
+allmypackages <- allmypackages %>%
+  filter(Priority != "base" | is.na(Priority)) %>%
+  select(-c(Enhances:MD5sum, LinkingTo:Suggests))
+thediff <- anti_join(oldpackages,allmypackages, by = "Package")
+thediff <- droplevels(thediff)
+thediff %>%
+  filter(whereat == "CRAN") %>%
+  pull(Package) %>%
+  as.character 
+```
+```{r hidden1, warnings=FALSE, message=FALSE, echo=FALSE}
+oldpackages %>%
+  filter(whereat == "CRAN") %>%
+  pull(Package) %>%
+  as.character() %>%
+  head(60)
+```
+
+### Just do it!
+
+Now that you have a nice automated list of everything that is a CRAN package you
+can give it a final look and see if there is anything else you'd like to filter
+out. Once you are sure the list is right one final pipe will set the process in
+motion.
+
+
+```{r step7, warnings=FALSE, message=FALSE, eval=FALSE}
+thediff %>%
+  filter(whereat == "CRAN") %>%
+  pull(Package) %>%
+  as.character %>%
+  install.packages
+```
+
+Depending on the speed of your network connection and the number of packages you
+have that will run for a few minutes.
+
+
+That takes care of our CRAN packages.  What about GitHub?
+
+```{r step8, warnings=FALSE, message=FALSE, eval=FALSE}
+thediff %>%
+  filter(str_detect(whereat, "GitHub repo")) %>%
+  select(Package, Version, NeedsCompilation, whereat)
+```
+```{r hidden2, warnings=FALSE, message=FALSE, echo=FALSE}
+oldpackages %>%
+  filter(str_detect(whereat, "GitHub repo")) %>%
+  select(Package, Version, NeedsCompilation, whereat)
+```
+
+Here's another chance to review what you have and whether you still want need
+these packages. I could automate the process and once again feed the right
+vector to `devtools::install_github()` but instead I choose to handle these
+manually as in `devtools::install_github("leeper/slopegraph")`.
+
+Same with the one package I get from R-Forge...
+
+```{r step9, warnings=FALSE, message=FALSE, eval=FALSE}
+allmypackages %>%
+  filter(str_detect(whereat, "R-Forge")) %>%
+  select(Package, Version, NeedsCompilation, whereat)
+install.packages("CHAID", repos="http://R-Forge.R-project.org")
+```
+
+At the end of this process you should have a nice clean R install that has all
+the packages you choose to maintain as well as a detailed listing of what those
+are.
+
+
+### Done!
+
+I hope you've found this useful. I am always open to comments, corrections and
+suggestions.
+
+Chuck (ibecav at gmail dot com)
+
+
+
+
+
+Note that the `echo = FALSE` parameter was added to the code chunk to prevent printing of the R code that generated the plot.
